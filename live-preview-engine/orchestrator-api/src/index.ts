@@ -10,6 +10,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Root route redirects to health check
+app.get('/', (req, res) => {
+    res.redirect('/api/preview/health');
+});
+
 // Health check endpoint
 app.get('/api/preview/health', (req, res) => {
     res.json({ status: 'ok', message: 'Preview Orchestrator API is running' });
