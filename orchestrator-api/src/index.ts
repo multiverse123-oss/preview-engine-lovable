@@ -10,23 +10,39 @@ app.use(express.json());
 
 // 1. Endpoint to create a new preview
 app.post('/api/preview', async (req, res) => {
-    const { prompt, userId } = req.body;
-    const previewId = `preview_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    // Store initial state in DexieDB
-    await db.previews.add({
-        id: previewId,
-        prompt,
-        userId,
-        status: 'initializing',
-        liveUrl: null,
-        createdAt: new Date()
-    });
-
-    // Process asynchronously
-    processPreview(previewId, prompt).catch(console.error);
-
-    res.json({ previewId, status: 'building' });
+    console.log('[API] POST /api/preview called with body:', req.body);
+    
+    try {
+        const { prompt, userId } = req.body;
+        const previewId = `preview_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        console.log(`[${previewId}] Generated for user: ${userId || 'anonymous'}`);
+        
+        // Store initial state in DexieDB
+        console.log(`[${previewId}] Attempting database write...`);
+        await db.previews.add({
+            id: previewId,
+            prompt,
+            userId,
+            status: 'initializing',
+            liveUrl: null,
+            createdAt: new Date()
+        });
+        console.log(`[${previewId}] Database write successful`);
+        
+        // Process asynchronously
+        console.log(`[${previewId}] Starting async processPreview`);
+        processPreview(previewId, prompt).catch(console.error);
+        
+        res.json({ previewId, status: 'building' });
+        
+    } catch (error) {
+        console.error('[API] CRITICAL ERROR in /api/preview handler:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to start preview generation',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
 });
 
 // 2. Endpoint to check preview status
