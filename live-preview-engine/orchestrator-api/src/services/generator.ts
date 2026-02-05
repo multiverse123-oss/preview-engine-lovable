@@ -1,6 +1,73 @@
 import fs from 'fs-extra';
 import path from 'path';
+import { db } from '../db'; // Ensure you have this import
+import { deployToNetlify } from './netlify'; // Ensure you have this import
 
+// New interface for queue jobs
+export interface PreviewJobData {
+  jobId: string;
+  prompt: string;
+  userId: string;
+}
+
+// THIS IS THE CRITICAL NEW FUNCTION FOR THE QUEUE
+export async function processPreviewJob(data: PreviewJobData): Promise<void> {
+  const { jobId, prompt, userId } = data;
+  let appPath = '';
+
+  try {
+    // Update status: building
+    await db.previews.update(jobId, { 
+      status: 'building', 
+      updatedAt: new Date() 
+    });
+
+    // Step 1: Generate app code (using your existing logic)
+    appPath = await generateAppCode(prompt);
+    
+    // Update status: generating
+    await db.previews.update(jobId, { 
+      status: 'generating', 
+      updatedAt: new Date() 
+    });
+
+    // Step 2: Deploy to Netlify
+    const liveUrl = await deployToNetlify(appPath);
+    
+    if (!liveUrl) {
+      throw new Error('Failed to get deployment URL from Netlify');
+    }
+
+    // Update status: live
+    await db.previews.update(jobId, { 
+      status: 'live', 
+      liveUrl,
+      updatedAt: new Date() 
+    });
+
+    // Cleanup temp directory after successful deployment
+    await fs.remove(appPath).catch(() => {
+      // Silent fail for cleanup
+    });
+
+  } catch (error) {
+    // Cleanup on error
+    if (appPath) {
+      await fs.remove(appPath).catch(() => {});
+    }
+
+    // Update status: failed
+    await db.previews.update(jobId, { 
+      status: 'failed', 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      updatedAt: new Date() 
+    });
+
+    throw error; // Re-throw for queue retry logic
+  }
+}
+
+// YOUR EXISTING FUNCTION - KEEP THIS AS IS
 export async function generateAppCode(prompt: string): Promise<string> {
     // Create a temporary directory for the app
     const tempDir = path.join('/tmp', `preview_${Date.now()}`);
